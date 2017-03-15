@@ -1,0 +1,256 @@
+---
+title: "Extension of Findley and Young (2015)"
+author: "Soo Wan Kim"
+date: "March 14, 2017"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+#import packages
+library(rmarkdown)
+library(knitr)
+library(tidyverse)
+library(lubridate)
+library(haven)
+```
+
+#R Commands
+
+## Duration
+
+### All Terrorism
+```{r duration_all_terr, eval=FALSE}
+#import list of COW country codes by country name
+cow <- read.csv("data/COW country codes.csv")
+cow <- unique(cow) %>%
+  rename(cowcode = CCode) #standardize country code var to facilitate merges
+
+#import GTD
+gtd <- read.csv("Data/gtd.csv")
+
+#list of target types to exclude from analysis of civilian casualties
+exclude <- c("Government (Diplomatic)", "Police", "Military", "Government (General)",
+             "Terrorists/Non-State Militia", "Tourists", "Violent Political Party",
+             "Unknown")
+
+#filter GTD to include only year, month, country code, target type, and number killed
+gtd_filt <- gtd %>%
+  select(iyear, imonth, country, targtype1, targtype1_txt, nkill) %>%
+  #standardize variables for merging
+  rename(year = iyear, month = imonth, cowcode = country) %>% 
+  #distinguish between civilian-targeting attacks and non-civilian targeting attacks
+  mutate(civilian = ifelse(targtype1_txt %in% exclude, "not civilian", "civilian")) %>%
+  na.omit() #remove NAs
+
+#############################
+#Attacks targeting civilians#
+#############################
+
+#get count of civilian deaths by month for each year
+gtd_civ_cas_month <- gtd_filt %>%
+  filter(civilian == "civilian") %>%
+  group_by(year, month, cowcode) %>%
+  #take log of number of civilian deaths + 1
+  summarize(lnterr_civcas_month = log(sum(nkill) + 1))
+
+#######################
+#All terrorist attacks#
+######################
+
+#get count of total deaths by month for each year
+gtd_tot_cas_month <- gtd_filt %>%
+  group_by(year, month, cowcode) %>%
+  #take log of number of deaths + 1
+  summarize(lnterr_totcas_month = log(sum(nkill) + 1))
+
+#combine civilian deaths and total deaths
+gtd_cas_month <- left_join(gtd_tot_cas_month, gtd_civ_cas_month)
+
+#export to .dta file
+write_dta(gtd_cas_month, "gtd_cas_month.dta")
+```
+
+### Suicide Terrorism
+
+```{r duration_suicide_terr, eval=FALSE}
+#############################
+#Attacks targeting civilians#
+#############################
+
+#import SAD for attacks targeting civilians
+suicide_civtarg <- read.csv("Data/cpost_civilian_target.csv") %>%
+  rename(StateNme = location_names) #standardize country name
+suicide_civtarg$attack_date <- as.Date(suicide_civtarg$attack_date)
+#add country codes
+suicide_civtarg <- left_join(suicide_civtarg, cow, by="StateNme")
+
+#remove NAs and create month and year columns for merging with FY2015 data
+suicide_civtarg <- suicide_civtarg %>%
+  na.omit() %>%
+  mutate(year = year(attack_date),
+         month = month(attack_date))
+
+#get log of civilian casualties + 1 each country-month from suicide terrorist attacks
+suicide_civtarg_count <- suicide_civtarg %>%
+  group_by(cowcode, year, month) %>%
+  summarize(lnsui_civcas_month = log(sum(number_killed) + 1))
+
+suicide_civtarg_count$cowcode <- as.numeric(suicide_civtarg_count$cowcode)
+
+#######################
+#All terrorist attacks#
+######################
+
+#import SAD for all attacks
+suicide_total <- read.csv("Data/cpost_all_target.csv") %>%
+  rename(StateNme = location_names)
+
+suicide_total$attack_date <- as.Date(suicide_total$attack_date)
+
+#add country codes
+suicide_total <- left_join(suicide_total, cow, by="StateNme")
+
+#remove NAs and standardize month and year variable names
+suicide_total <- suicide_total %>%
+  na.omit() %>%
+  mutate(year = year(attack_date),
+         month = month(attack_date))
+
+#get log of total casualties + 1 each country-month from suicide terrorist attacks
+suicide_total_count <- suicide_total %>%
+  group_by(cowcode, year, month) %>%
+  summarize(lnsui_totcas_month = log(sum(number_killed) + 1))
+suicide_total_count$cowcode <- as.numeric(suicide_total_count$cowcode)
+
+#combine civilian deaths and total deaths
+suicide_cas_month <- left_join(suicide_total_count, suicide_civtarg_count)
+
+#export to .dta
+write_dta(suicide_cas_month, "suicide_cas_month.dta")
+```
+
+## Recurrence
+
+### All Terrorism
+
+```{r recurrence_all_terr, eval=FALSE}
+#get log of count of civilian deaths + 1 from terrorist attacks for each country-year
+gtd_civ_cas_year <- gtd_filt %>%
+  filter(civilian == "civilian") %>%
+  group_by(year, cowcode) %>%
+  summarize(lnterr_civcas_year = log(sum(nkill) + 1))
+
+#get log of count of total deaths + 1 for each country-year
+gtd_tot_cas_year <- gtd_filt %>%
+  group_by(year, cowcode) %>%
+  summarize(lnterr_totcas_year = log(sum(nkill) + 1))
+
+#combine civilian deaths and total deaths
+gtd_cas_year <- left_join(gtd_tot_cas_year, gtd_civ_cas_year)
+
+#export to .dta
+write_dta(gtd_cas_year, "gtd_cas_year.dta")
+```
+
+### Suicide Terrorism
+
+```{r recurrence_suicide_terr, eval=FALSE}
+#get log of count of civilian and total deaths + 1 
+#from suicide terrorist attacks for each country-year
+suicide_cas_year <- suicide_cas_month %>%
+  #move backwards from monthly casualty data to get raw counts for each month
+  mutate(sui_civcas_month = exp(lnsui_civcas_month) - 1,
+         sui_totcas_month = exp(lnsui_totcas_month) - 1) %>%
+  select(-lnsui_totcas_month, -lnsui_civcas_month) %>%
+  group_by(cowcode, year) %>%
+  #take logs
+  summarize(lnsui_civcas_year = log(sum(sui_civcas_month) + 1),
+            lnsui_totcas_year = log(sum(sui_totcas_month) + 1))
+
+#export to .dta
+write_dta(suicide_cas_year, "suicide_cas_year.dta")
+```
+
+#Stata commands
+## Duration
+
+```{r stata_duration_setup, eval=FALSE}
+clear
+set more off
+
+*load duration data
+use duration_main.dta
+```
+
+### All Terrorism
+```{r stata_duration_all_terr, eval=FALSE}
+*merge with monthly terrorism casualties data
+joinby year month cowcode using gtd_cas_month.dta, unmatched(master)
+
+*replace missing values with 0 (assume no casualties) (log(0 + 1) = 0)
+replace lnterr_civcas_month = 0 if missing(lnterr_civcas_month)
+replace lnterr_totcas_month = 0 if missing(lnterr_totcas_month)
+
+*Set the data for survival analysis
+stset warmonths, id(warnumber) f(warend)
+
+* Model 2
+streg smterrorwarrelated logpop elf  lngdp uppsalaMaxed logbattledeaths mountains guarantee lnterr_civcas_month, dist(lognormal) nolog robust
+streg smterrorwarrelated logpop elf  lngdp uppsalaMaxed logbattledeaths mountains guarantee lnterr_totcas_month, dist(lognormal) nolog robust
+```
+
+### Suicide Terrorism
+```{r stata_duration_suicide_terr, eval=FALSE}
+joinby year month cowcode using suicide_cas_month.dta, unmatched(master)
+
+replace lnsui_civcas_month = 0 if missing(lnsui_civcas_month)
+replace lnsui_totcas_month = 0 if missing(lnsui_totcas_month)
+
+stset warmonths, id(warnumber) f(warend)
+
+streg smterrorwarrelated logpop elf  lngdp uppsalaMaxed logbattledeaths mountains guarantee lnsui_civcas_month, dist(lognormal) nolog robust
+streg smterrorwarrelated logpop elf  lngdp uppsalaMaxed logbattledeaths mountains guarantee lnsui_totcas_month, dist(lognormal) nolog robust
+```
+## Recurrence
+
+```{r stata_recurrence_setup, eval=FALSE}
+clear
+set more off
+
+*Recurrence data
+use recurrence_main.dta, clear
+```
+
+### All Terrorism
+```{r stata_recurrence_all_terr, eval=FALSE}
+*merge with yearly terrorism casualties data
+joinby year cowcode using gtd_cas_year.dta, unmatched(master)
+
+*replace missing values with 0 (assuming no casualties) (log (0 + 1) = 0)
+replace lnterr_civcas_year = 0 if missing(lnterr_civcas_year)
+replace lnterr_totcas_year = 0 if missing(lnterr_totcas_year)
+
+*Set the data for survival analysis
+stset pdur, id(warnumb) f(pcens)
+
+*Model 4
+streg smterrorWarRelated lpopns ethfrac ln_gdpen inst2 regd4 absent lnterr_civcas_year, dist(lognormal) nolog robust
+streg smterrorWarRelated lpopns ethfrac ln_gdpen inst2 regd4 absent lnterr_totcas_year, dist(lognormal) nolog robust
+```
+
+### Suicide Terrorism
+```{r stata_recurrence_suicide_terr, eval=FALSE}
+joinby year cowcode using suicide_cas_year.dta, unmatched(master)
+
+replace lnsui_civcas_year = 0 if missing(lnsui_civcas_year)
+replace lnsui_totcas_year = 0 if missing(lnsui_totcas_year)
+
+stset pdur, id(warnumb) f(pcens)
+
+streg smterrorWarRelated lpopns ethfrac ln_gdpen inst2 regd4 absent lnsui_civcas_year, dist(lognormal) nolog robust
+streg smterrorWarRelated lpopns ethfrac ln_gdpen inst2 regd4 absent lnsui_totcas_year, dist(lognormal) nolog robust
+```
+
+```{r include=FALSE}
+devtools::session_info()
+```
