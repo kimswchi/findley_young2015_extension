@@ -14,11 +14,9 @@ library(lubridate)
 library(haven)
 ```
 
-#R Commands
+# Duration
 
-## Duration
-
-### All Terrorism
+## All Terrorism
 ```{r duration_all_terr, eval=FALSE}
 #import list of COW country codes by country name
 cow <- read.csv("data/COW country codes.csv")
@@ -70,7 +68,7 @@ gtd_cas_month <- left_join(gtd_tot_cas_month, gtd_civ_cas_month)
 write_dta(gtd_cas_month, "gtd_cas_month.dta")
 ```
 
-### Suicide Terrorism
+## Suicide Terrorism
 
 ```{r duration_suicide_terr, eval=FALSE}
 #############################
@@ -129,9 +127,9 @@ suicide_cas_month <- left_join(suicide_total_count, suicide_civtarg_count)
 write_dta(suicide_cas_month, "suicide_cas_month.dta")
 ```
 
-## Recurrence
+# Recurrence
 
-### All Terrorism
+## All Terrorism
 
 ```{r recurrence_all_terr, eval=FALSE}
 #get log of count of civilian deaths + 1 from terrorist attacks for each country-year
@@ -152,7 +150,7 @@ gtd_cas_year <- left_join(gtd_tot_cas_year, gtd_civ_cas_year)
 write_dta(gtd_cas_year, "gtd_cas_year.dta")
 ```
 
-### Suicide Terrorism
+## Suicide Terrorism
 
 ```{r recurrence_suicide_terr, eval=FALSE}
 #get log of count of civilian and total deaths + 1 
@@ -171,85 +169,6 @@ suicide_cas_year <- suicide_cas_month %>%
 write_dta(suicide_cas_year, "suicide_cas_year.dta")
 ```
 
-#Stata commands
-## Duration
-
-```{r stata_duration_setup, eval=FALSE}
-clear
-set more off
-
-*load duration data
-use duration_main.dta
-```
-
-### All Terrorism
-```{r stata_duration_all_terr, eval=FALSE}
-*merge with monthly terrorism casualties data
-joinby year month cowcode using gtd_cas_month.dta, unmatched(master)
-
-*replace missing values with 0 (assume no casualties) (log(0 + 1) = 0)
-replace lnterr_civcas_month = 0 if missing(lnterr_civcas_month)
-replace lnterr_totcas_month = 0 if missing(lnterr_totcas_month)
-
-*Set the data for survival analysis
-stset warmonths, id(warnumber) f(warend)
-
-* Model 2
-streg smterrorwarrelated logpop elf  lngdp uppsalaMaxed logbattledeaths mountains guarantee lnterr_civcas_month, dist(lognormal) nolog robust
-streg smterrorwarrelated logpop elf  lngdp uppsalaMaxed logbattledeaths mountains guarantee lnterr_totcas_month, dist(lognormal) nolog robust
-```
-
-### Suicide Terrorism
-```{r stata_duration_suicide_terr, eval=FALSE}
-joinby year month cowcode using suicide_cas_month.dta, unmatched(master)
-
-replace lnsui_civcas_month = 0 if missing(lnsui_civcas_month)
-replace lnsui_totcas_month = 0 if missing(lnsui_totcas_month)
-
-stset warmonths, id(warnumber) f(warend)
-
-streg smterrorwarrelated logpop elf  lngdp uppsalaMaxed logbattledeaths mountains guarantee lnsui_civcas_month, dist(lognormal) nolog robust
-streg smterrorwarrelated logpop elf  lngdp uppsalaMaxed logbattledeaths mountains guarantee lnsui_totcas_month, dist(lognormal) nolog robust
-```
-## Recurrence
-
-```{r stata_recurrence_setup, eval=FALSE}
-clear
-set more off
-
-*Recurrence data
-use recurrence_main.dta, clear
-```
-
-### All Terrorism
-```{r stata_recurrence_all_terr, eval=FALSE}
-*merge with yearly terrorism casualties data
-joinby year cowcode using gtd_cas_year.dta, unmatched(master)
-
-*replace missing values with 0 (assuming no casualties) (log (0 + 1) = 0)
-replace lnterr_civcas_year = 0 if missing(lnterr_civcas_year)
-replace lnterr_totcas_year = 0 if missing(lnterr_totcas_year)
-
-*Set the data for survival analysis
-stset pdur, id(warnumb) f(pcens)
-
-*Model 4
-streg smterrorWarRelated lpopns ethfrac ln_gdpen inst2 regd4 absent lnterr_civcas_year, dist(lognormal) nolog robust
-streg smterrorWarRelated lpopns ethfrac ln_gdpen inst2 regd4 absent lnterr_totcas_year, dist(lognormal) nolog robust
-```
-
-### Suicide Terrorism
-```{r stata_recurrence_suicide_terr, eval=FALSE}
-joinby year cowcode using suicide_cas_year.dta, unmatched(master)
-
-replace lnsui_civcas_year = 0 if missing(lnsui_civcas_year)
-replace lnsui_totcas_year = 0 if missing(lnsui_totcas_year)
-
-stset pdur, id(warnumb) f(pcens)
-
-streg smterrorWarRelated lpopns ethfrac ln_gdpen inst2 regd4 absent lnsui_civcas_year, dist(lognormal) nolog robust
-streg smterrorWarRelated lpopns ethfrac ln_gdpen inst2 regd4 absent lnsui_totcas_year, dist(lognormal) nolog robust
-```
 
 ```{r include=FALSE}
 devtools::session_info()
